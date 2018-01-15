@@ -4,3 +4,5 @@ build
 dist
 *.pyc
 .tox
+
+.DS_Store
