@@ -8,7 +8,6 @@ from ctypes import *
 import numpy as np
 from numpy.ctypeslib import as_ctypes
 import os
-import six
 
 ale_lib = cdll.LoadLibrary(os.path.join(os.path.dirname(__file__),
                                         'ale_interface/build/libale_c.so'))
@@ -41,6 +40,18 @@ ale_lib.game_over.argtypes = [c_void_p]
 ale_lib.game_over.restype = c_bool
 ale_lib.reset_game.argtypes = [c_void_p]
 ale_lib.reset_game.restype = None
+ale_lib.getAvailableModes.argtypes = [c_void_p, c_void_p]
+ale_lib.getAvailableModes.restype = None
+ale_lib.getAvailableModesSize.argtypes = [c_void_p]
+ale_lib.getAvailableModesSize.restype = c_int
+ale_lib.setMode.argtypes = [c_void_p, c_int]
+ale_lib.setMode.restype = None
+ale_lib.getAvailableDifficulties.argtypes = [c_void_p, c_void_p]
+ale_lib.getAvailableDifficulties.restype = None
+ale_lib.getAvailableDifficultiesSize.argtypes = [c_void_p]
+ale_lib.getAvailableDifficultiesSize.restype = c_int
+ale_lib.setDifficulty.argtypes = [c_void_p, c_int]
+ale_lib.setDifficulty.restype = None
 ale_lib.getLegalActionSet.argtypes = [c_void_p, c_void_p]
 ale_lib.getLegalActionSet.restype = None
 ale_lib.getLegalActionSize.argtypes = [c_void_p]
@@ -67,8 +78,6 @@ ale_lib.getScreenHeight.argtypes = [c_void_p]
 ale_lib.getScreenHeight.restype = c_int
 ale_lib.getScreenRGB.argtypes = [c_void_p, c_void_p]
 ale_lib.getScreenRGB.restype = None
-ale_lib.getScreenRGB2.argtypes = [c_void_p, c_void_p]
-ale_lib.getScreenRGB2.restype = None
 ale_lib.getScreenGrayscale.argtypes = [c_void_p, c_void_p]
 ale_lib.getScreenGrayscale.restype = None
 ale_lib.saveState.argtypes = [c_void_p]
@@ -108,26 +117,27 @@ class ALEInterface(object):
         Warning = 1
         Error = 2
 
+
     def __init__(self):
         self.obj = ale_lib.ALE_new()
 
     def getString(self, key):
-        return ale_lib.getString(self.obj, _as_bytes(key))
+        return ale_lib.getString(self.obj, key)
     def getInt(self, key):
-        return ale_lib.getInt(self.obj, _as_bytes(key))
+        return ale_lib.getInt(self.obj, key)
     def getBool(self, key):
-        return ale_lib.getBool(self.obj, _as_bytes(key))
+        return ale_lib.getBool(self.obj, key)
     def getFloat(self, key):
-        return ale_lib.getFloat(self.obj, _as_bytes(key))
+        return ale_lib.getFloat(self.obj, key)
 
     def setString(self, key, value):
-      ale_lib.setString(self.obj, _as_bytes(key), _as_bytes(value))
+      ale_lib.setString(self.obj, key, _as_bytes(value))
     def setInt(self, key, value):
-      ale_lib.setInt(self.obj, _as_bytes(key), int(value))
+      ale_lib.setInt(self.obj, key, _as_bytes(value))
     def setBool(self, key, value):
-      ale_lib.setBool(self.obj, _as_bytes(key), bool(value))
+      ale_lib.setBool(self.obj, key, _as_bytes(value))
     def setFloat(self, key, value):
-      ale_lib.setFloat(self.obj, _as_bytes(key), float(value))
+      ale_lib.setFloat(self.obj, key, _as_bytes(value))
 
     def loadROM(self, rom_file):
         ale_lib.loadROM(self.obj, _as_bytes(rom_file))
@@ -140,6 +150,36 @@ class ALEInterface(object):
 
     def reset_game(self):
         ale_lib.reset_game(self.obj)
+
+    def getLegalActionSet(self):
+        act_size = ale_lib.getLegalActionSize(self.obj)
+        act = np.zeros((act_size), dtype=np.intc)
+        ale_lib.getLegalActionSet(self.obj, as_ctypes(act))
+        return act
+
+    def getMinimalActionSet(self):
+        act_size = ale_lib.getMinimalActionSize(self.obj)
+        act = np.zeros((act_size), dtype=np.intc)
+        ale_lib.getMinimalActionSet(self.obj, as_ctypes(act))
+        return act
+
+    def getAvailableModes(self):
+        modes_size = ale_lib.getAvailableModesSize(self.obj)
+        modes = np.zeros((modes_size), dtype=np.intc)
+        ale_lib.getAvailableModes(self.obj, as_ctypes(modes))
+        return modes
+
+    def setMode(self, mode):
+        ale_lib.setMode(self.obj, mode)
+
+    def getAvailableDifficulties(self):
+        difficulties_size = ale_lib.getAvailableDifficultiesSize(self.obj)
+        difficulties = np.zeros((difficulties_size), dtype=np.intc)
+        ale_lib.getAvailableDifficulties(self.obj, as_ctypes(difficulties))
+        return difficulties
+
+    def setDifficulty(self, difficulty):
+        ale_lib.setDifficulty(self.obj, difficulty)
 
     def getLegalActionSet(self):
         act_size = ale_lib.getLegalActionSize(self.obj)
@@ -189,11 +229,6 @@ class ALEInterface(object):
         screen_data MUST be a numpy array of uint8. This can be initialized like so:
         screen_data = np.empty((height,width,3), dtype=np.uint8)
         If it is None,  then this function will initialize it.
-        On little-endian machines like x86, the channels are BGR order:
-            screen_data[x, y, 0:3] is [blue, green, red]
-        On big-endian machines (rare in 2017) the channels would be the opposite order.
-        There's not much error checking here: if you supply an array that's too small
-        this function will produce undefined behavior.
         """
         if(screen_data is None):
             width = ale_lib.getScreenWidth(self.obj)
@@ -202,24 +237,13 @@ class ALEInterface(object):
         ale_lib.getScreenRGB(self.obj, as_ctypes(screen_data[:]))
         return screen_data
 
-
     def getScreenRGB2(self, screen_data=None):
-        """This function fills screen_data with the data in RGB format.
-        screen_data MUST be a numpy array of uint8. This can be initialized like so:
-          screen_data = np.empty((height,width,3), dtype=np.uint8)
-        If it is None,  then this function will initialize it.
-        On all architectures, the channels are RGB order:
-            screen_data[x, y, :] is [red, green, blue]
-        There's not much error checking here: if you supply an array that's too small
-        this function will produce undefined behavior.
         """
-        if(screen_data is None):
-            width = ale_lib.getScreenWidth(self.obj)
-            height = ale_lib.getScreenHeight(self.obj)
-            screen_data = np.empty((height, width, 3), dtype=np.uint8)
-        assert screen_data.strides == (480, 3, 1)
-        ale_lib.getScreenRGB2(self.obj, as_ctypes(screen_data[:]))
-        return screen_data
+        Just executes getScreenRGB.
+        For support with the current gym version.
+        return getScreenRGB
+        """
+        return self.getScreenRGB(screen_data)
 
     def getScreenGrayscale(self, screen_data=None):
         """This function fills screen_data with the data in grayscale
@@ -252,7 +276,7 @@ class ALEInterface(object):
 
     def saveScreenPNG(self, filename):
         """Save the current screen as a png file"""
-        return ale_lib.saveScreenPNG(self.obj, _as_bytes(filename))
+        return ale_lib.saveScreenPNG(self.obj, filename)
 
     def saveState(self):
         """Saves the state of the system"""
